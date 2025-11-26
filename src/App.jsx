@@ -10,6 +10,7 @@ extend({ OrbitControls: ThreeOrbitControls });
 const rad = (d) => (d * Math.PI) / 180;
 const deg = (r) => (r * 180) / Math.PI;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const POLAR_STUB = 0.08; // tramo fijo del brazo Polar (m)
 const lerp = (a, b, t) => a + (b - a) * t;
 const easeInOutCubic = (t) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -44,9 +45,11 @@ function fk3_pos({ L1, L2, q1, q2, q3 }) {
 }
 
 /* ===== FK polar ===== */
-function fkPolar_pos({ theta, phi, rho }) {
-  const radial = rho * Math.cos(phi);
-  const y = rho * Math.sin(phi);
+function fkPolar_pos({ theta, phi, rho, stub = POLAR_STUB }) {
+  // En el modelo hay un tramo fijo ("stub") antes de la extensión prismática rho.
+  const total = stub + rho; // distancia real desde la base hasta la punta
+  const radial = total * Math.cos(phi);
+  const y = total * Math.sin(phi);
   const x = Math.sin(theta) * radial;
   const z = Math.cos(theta) * radial;
   return { x, y, z };
@@ -245,25 +248,33 @@ export default function App() {
     return cands[0];
   };
 
-  const solveIKReturnPolar = (xt, yt, zt) => {
-    const yclamp = Math.max(0, yt);
-    const r = Math.hypot(xt, zt);
-    const s = Math.hypot(r, yclamp); // distancia total
-    if (s < rhoMin || s > rhoMax) return null;
-    const thetaYaw = Math.atan2(xt, zt);
-    const phiPitch = Math.atan2(yclamp, r);
-    const rhoReq = clamp(s, rhoMin, rhoMax);
-    const y_tip = s * Math.sin(phiPitch);
-    if (y_tip < 0) return null;
-    return {
-      type: "POLAR",
-      theta: thetaYaw,
-      phi: phiPitch,
-      rho: rhoReq,
-      y_tip,
-      elbow: null,
-    };
+const solveIKReturnPolar = (xt, yt, zt) => {
+  const yclamp = Math.max(0, yt);
+  const r = Math.hypot(xt, zt);
+  const s = Math.hypot(r, yclamp); // distancia real base->punta (incluye stub)
+
+  // rho representa SOLO la extensión prismática (sin incluir el stub del modelo)
+  const sMin = POLAR_STUB + rhoMin;
+  const sMax = POLAR_STUB + rhoMax;
+  if (s < sMin || s > sMax) return null;
+
+  const thetaYaw = Math.atan2(xt, zt);
+  const phiPitch = Math.atan2(yclamp, r);
+
+  const rhoReq = clamp(s - POLAR_STUB, rhoMin, rhoMax);
+
+  const y_tip = s * Math.sin(phiPitch);
+  if (y_tip < 0) return null;
+
+  return {
+    type: "POLAR",
+    theta: thetaYaw,
+    phi: phiPitch,
+    rho: rhoReq,
+    y_tip,
+    elbow: null,
   };
+};
 
   // función que aplica el IK elegido
   const solveIK = (xt, yt, zt) => {
@@ -835,7 +846,7 @@ export default function App() {
             </button>
           </div>
           <p style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
-            El IK falla si el objetivo es inalcanzable.
+            El Brazo falla si el objetivo es inalcanzable.
           </p>
         </div>
 
@@ -868,7 +879,7 @@ export default function App() {
                   q3={rad(q3)}
                 />
               ) : (
-                <ArmPolar theta={rad(theta)} phi={rad(phi)} rho={rho} />
+<ArmPolar theta={rad(theta)} phi={rad(phi)} rho={rho} stub={POLAR_STUB} />
               )}
             </group>
 
@@ -916,7 +927,7 @@ export default function App() {
         }}
       >
         <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>
-          Cálculo IK (vista numérica)
+          Cálculo de angulos  (cinematica inversa)
         </h2>
         <div
           style={{
@@ -1084,6 +1095,8 @@ export default function App() {
       </div>
 
       {/* ===== NUEVO: Modal de guía ===== */}
+      {/* ===== Guía / ayuda del simulador 3D ===== */}
+      {/* ===== Guía / ayuda del simulador 3D (con scroll) ===== */}
       {showHelp && (
         <div
           onClick={() => setShowHelp(false)}
@@ -1103,85 +1116,165 @@ export default function App() {
               background: "#fff",
               borderRadius: 16,
               padding: 20,
-              maxWidth: 480,
+              maxWidth: 520,
               width: "90%",
+              maxHeight: "80vh",        // 👈 límite de alto
+              overflowY: "auto",        // 👈 scroll interno
+              boxSizing: "border-box",
               boxShadow: "0 10px 40px rgba(0,0,0,.25)",
               fontSize: 13,
               color: "#111827",
             }}
           >
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-              Guía rápida del simulador
+              Guía del simulador 3D y cinemática
             </h2>
+
             <p style={{ marginBottom: 8 }}>
-              Esta app te permite explorar cinemática directa e inversa de dos
-              tipos de robots:
+              Esta app te permite experimentar de forma visual con{" "}
+              <b>cinemática directa (FK)</b> y <b>cinemática inversa (IK)</b> de
+              dos tipos de robots:
             </p>
             <ul style={{ marginLeft: 16, marginBottom: 8 }}>
               <li>
-                <b>Brazo 3R:</b> base giratoria (q1) + hombro (q2) + codo (q3).
+                <b>Brazo 3R:</b> base giratoria (q1), hombro (q2) y codo (q3).
               </li>
               <li>
-                <b>Robot circular (polar):</b> ángulo de base (θ), elevación
-                (φ) y extensión (ρ).
+                <b>Robot circular:</b> ángulo de base (θ), elevación (φ)
+                y extensión radial (ρ).
               </li>
             </ul>
-            <p style={{ marginBottom: 8 }}>
-              <b>Pasos sugeridos de uso:</b>
+
+            <p style={{ marginBottom: 6 }}>
+              <b>1. ¿Qué estás viendo en la escena 3D?</b>
+            </p>
+            <ul style={{ marginLeft: 16, marginBottom: 8 }}>
+              <li>Una rejilla gris que representa el suelo (plano X–Z).</li>
+              <li>
+                El robot (brazo 3R o Circular) apoyado en la base, moviéndose solo
+                en la zona con <b>y ≥ 0</b> (por encima del suelo).
+              </li>
+              <li>
+                Una <b>esfera azul</b> que marca el objetivo que el efector
+                final intenta alcanzar.
+              </li>
+            </ul>
+
+            <p style={{ marginBottom: 6 }}>
+              <b>2. Cómo usar la app paso a paso</b>
             </p>
             <ol style={{ marginLeft: 16, marginBottom: 8 }}>
               <li>
-                Elige el tipo de robot con el botón{" "}
-                <b>“Cambiar a Robot Circular / Brazo 3R”</b>.
+                Cambia entre <b>Brazo 3R</b> y <b>Robot Circular</b> con el
+                botón de <b>“Cambiar a…”</b> en la parte superior.
               </li>
               <li>
                 Ajusta las <b>longitudes</b> (L1, L2 o ρ) y las{" "}
-                <b>articulaciones</b> con los deslizadores.
+                <b>articulaciones</b> usando los deslizadores del panel
+                izquierdo. Aquí estás probando <b>cinemática directa</b>.
               </li>
               <li>
-                Mueve la <b>esfera azul</b> o edita las coordenadas del
-                objetivo (x, y, z) y pulsa <b>“Ir al objetivo”</b>.
+                Mueve el objetivo:
+                <ul style={{ marginLeft: 16 }}>
+                  <li>
+                    Arrastrando la <b>esfera azul</b>.
+                  </li>
+                  <li>
+                    Escribiendo las coordenadas (x, y, z) del objetivo en mm y
+                    pulsando <b>“Ir al objetivo”</b>.
+                  </li>
+                  <li>
+                    Usando el área de <b>Cálculo de angulos</b> al final de la página:
+                    escribes el punto, pulsas <b>“Calcular”</b> y luego{" "}
+                    <b>“Aplicar”</b>.
+                  </li>
+                </ul>
+                Aquí estás probando <b>cinemática inversa</b>.
               </li>
               <li>
-                Usa el panel de <b>Cálculo IK</b> escribiendo un punto y
-                pulsando <b>“Calcular”</b>; si la solución es válida puedes
-                aplicarla con <b>“Aplicar”</b>.
+                Utiliza el ratón en la escena 3D para:
+                <ul style={{ marginLeft: 16 }}>
+                  <li>
+                    Rotar la vista (clic izquierdo) y ver el robot desde
+                    distintos ángulos.
+                  </li>
+                  <li>Acercar/alejar con la rueda del ratón.</li>
+                </ul>
               </li>
             </ol>
 
-            <p style={{ marginBottom: 8 }}>
-              <b>Actividad didáctica (cuestionario):</b>
-            </p>
             <p style={{ marginBottom: 6 }}>
-              Responde mentalmente (o por escrito) estas preguntas y usa el simulador
-              para comprobar tus respuestas:
+              <b>3. ¿Qué es la cinemática directa (FK)?</b>
             </p>
-            <ol style={{ marginLeft: 16, marginBottom: 10 }}>
-              <li style={{ marginBottom: 6 }}>
-                <b>Pregunta 1 (selección simple):</b>  
-                ¿Cuál es una condición necesaria para que el algoritmo de cinemática
-                inversa (IK) encuentre una solución para el objetivo?
-                <br />
-                a) Que el objetivo esté <b>dentro del alcance</b> del robot. <br />
-                b) Que todas las articulaciones estén en 0°. <br />
-                c) Que L1 y L2 sean exactamente iguales.
+            <p style={{ marginBottom: 8 }}>
+              La <b>cinemática directa</b> responde a la pregunta:
+              <br />
+              <i>
+                “Si conozco los ángulos de las articulaciones y las longitudes
+                del robot, ¿en qué posición (x, y, z) queda la punta?”
+              </i>
+            </p>
+            <ul style={{ marginLeft: 16, marginBottom: 8 }}>
+              <li>
+                En la app, la FK aparece cuando <b>mueves los deslizadores</b>{" "}
+                de q1, q2, q3 (o θ, φ, ρ). El programa usa esos valores para
+                calcular la posición del efector final y actualizar el dibujo.
               </li>
               <li>
-                <b>Pregunta 2 (selección simple):</b>  
-                Si aumentas las longitudes L1 y L2 del brazo (manteniendo los mismos
-                ángulos articulares), ¿qué ocurre con la región del espacio que puede
-                alcanzar el efector final?
-                <br />
-                a) La región alcanzable se hace más grande. <br />
-                b) La región alcanzable se hace más pequeña. <br />
-                c) La región alcanzable no cambia.
+                Internamente, esto lo hace con funciones en el codigo llamadas{" "}
+                <code>fk3_pos</code> y <code>fkPolar_pos</code> (para el robot
+                3D) y <code>fk2D</code> en la vista 2D.
+              </li>
+            </ul>
+
+            <p style={{ marginBottom: 6 }}>
+              <b>4. ¿Qué es la cinemática inversa (IK)?</b>
+            </p>
+            <p style={{ marginBottom: 8 }}>
+              La <b>cinemática inversa</b> responde a la pregunta opuesta:
+              <br />
+              <i>
+                “Si quiero que la punta llegue a un punto (x, y, z) del espacio,
+                ¿qué ángulos debe tomar cada articulación?”
+              </i>
+            </p>
+            <ul style={{ marginLeft: 16, marginBottom: 8 }}>
+              <li>
+                En la app, usas IK cuando <b>mueves la esfera azul</b>, cambias
+                las coordenadas del objetivo o utilizas el panel de{" "}
+                <b>Cálculo de angulos</b>.
+              </li>
+              <li>
+                El simulador intenta resolver los ángulos con funciones dentro del codigo llamadas{" "}
+                <code>ik2R</code> y los solvers <code>solveIKReturn3R</code> y{" "}
+                <code>solveIKReturnPolar</code>. Si el punto está fuera del
+                alcance o por debajo del suelo, <b>no hay solución</b> y se
+                indica que la cinematica inversa falla.
+              </li>
+            </ul>
+
+            <p style={{ marginBottom: 6 }}>
+              <b>5. Mini actividad para practicar</b>
+            </p>
+            <ol style={{ marginLeft: 16, marginBottom: 10 }}>
+              <li>
+                Elige el <b>Brazo 3R</b>, fija L1 y L2 y mueve los deslizadores
+                de q1, q2, q3. Observa cómo cambia la posición de la punta: eso
+                es <b>cinemática directa</b>.
+              </li>
+              <li>
+                Coloca un objetivo que esté claramente dentro del alcance y usa{" "}
+                <b>“Ir al objetivo”</b>. Luego intenta poner un objetivo muy
+                lejos o con y negativa: deberías ver que el IK ya no puede
+                encontrar solución.
+              </li>
+              <li>
+                Cambia al <b>Robot Circular</b> y repite el experimento para
+                entender cómo θ, φ y ρ controlan la orientación y distancia
+                de la punta.
               </li>
             </ol>
-            <p style={{ marginBottom: 12 }}>
-              Después de elegir tus respuestas, modifica las longitudes y mueve el
-              objetivo en la escena 3D para verificar de forma visual si tus elecciones
-              tienen sentido.
-            </p>
+
             <div style={{ textAlign: "right" }}>
               <button
                 onClick={() => setShowHelp(false)}
@@ -1198,6 +1291,7 @@ export default function App() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

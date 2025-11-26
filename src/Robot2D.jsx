@@ -445,7 +445,7 @@ export default function Robot2D({ onBack }) {
         }}
       >
         <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-          Cálculo IK (numérico)
+          Cálculo - Cinematica Inversa (numérico)
         </h2>
         <div
           style={{
@@ -546,6 +546,8 @@ export default function Robot2D({ onBack }) {
       </div>
 
       {/* NUEVO: Modal de guía para 2D */}
+      {/* Guía / ayuda para la vista 2D */}
+      {/* Guía / ayuda para la vista 2D (con scroll) */}
       {showHelp && (
         <div
           onClick={() => setShowHelp(false)}
@@ -565,8 +567,11 @@ export default function Robot2D({ onBack }) {
               background: "#fff",
               borderRadius: 16,
               padding: 20,
-              maxWidth: 460,
+              maxWidth: 480,
               width: "90%",
+              maxHeight: "80vh",        // 👈 límite de alto
+              overflowY: "auto",        // 👈 scroll interno
+              boxSizing: "border-box",
               boxShadow: "0 10px 40px rgba(0,0,0,.25)",
               fontSize: 13,
               color: "#111827",
@@ -575,60 +580,118 @@ export default function Robot2D({ onBack }) {
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
               Guía rápida — Robot 2R en 2D
             </h2>
+
             <p style={{ marginBottom: 8 }}>
               Esta vista muestra un brazo <b>2R plano</b> en el plano X–Y, con
-              un suelo que el efector no puede cruzar.
+              una base fija sobre el suelo. El efector final no puede bajar por
+              debajo de y = 0.
+            </p>
+
+            <p style={{ marginBottom: 6 }}>
+              <b>1. Cómo usar la vista 2D</b>
             </p>
             <ul style={{ marginLeft: 16, marginBottom: 8 }}>
               <li>
-                Ajusta <b>L1</b> y <b>L2</b> (longitudes) en milímetros.
+                Ajusta las <b>longitudes L1 y L2</b> (en milímetros) en el panel
+                izquierdo.
               </li>
               <li>
-                Cambia <b>q1</b> y <b>q2</b> con los deslizadores para ver cómo
-                se mueve el brazo.
+                Usa los deslizadores de <b>q1</b> y <b>q2</b> para mover el
+                brazo. Eso es <b>cinemática directa</b>.
               </li>
               <li>
-                Haz click en el plano para definir un objetivo y luego pulsa{" "}
-                <b>“Ir al objetivo (IK)”</b>.
+                Haz click en el plano para elegir un punto objetivo (círculo
+                azul) y pulsa <b>“Ir al objetivo”</b> para que el robot
+                intente alcanzarlo con <b>cinemática inversa</b>.
               </li>
               <li>
-                Abajo puedes escribir un punto y usar el panel de{" "}
-                <b>Cálculo IK</b> para obtener los ángulos que lo alcanzan.
+                Abajo tienes un panel de <b>Cálculo de angulos</b> donde puedes escribir
+                un punto (x, y), pulsar <b>“Calcular”</b> y luego{" "}
+                <b>“Aplicar”</b> para usar esos ángulos en el dibujo.
+              </li>
+              <li>
+                El botón de configuración de{" "}
+                <b>“codo arriba / codo abajo”</b> cambia la solución de los angulos
+                escogiendo una de las dos posibles posturas.
               </li>
             </ul>
 
-            
-            <p style={{ marginBottom: 8 }}>
-              <b>Actividad didáctica (cuestionario):</b>
-            </p>
             <p style={{ marginBottom: 6 }}>
-              Observa el dibujo del robot 2R y responde:
+              <b>2. Cinemática directa (FK) en 2D</b>
             </p>
-            <ol style={{ marginLeft: 16, marginBottom: 10 }}>
-              <li style={{ marginBottom: 6 }}>
-                <b>Pregunta 1 (selección simple):</b>  
-                ¿Cuál es una condición necesaria para que un punto objetivo en el plano
-                tenga solución de IK para este robot 2R?
-                <br />
-                a) Que el punto esté dentro del círculo de radio L1 + L2. <br />
-                b) Que el punto esté sobre el eje X positivo. <br />
-                c) Que L1 = L2.
+            <p style={{ marginBottom: 8 }}>
+              La <b>cinemática directa</b> responde:
+              <br />
+              <i>
+                “Si conozco q1, q2, L1 y L2, ¿en qué punto (x, y) queda la
+                punta?”
+              </i>
+            </p>
+            <ul style={{ marginLeft: 16, marginBottom: 8 }}>
+              <li>
+                En el código, esto se implementa con la función{" "}
+                <code>fk2D</code>, que usa trigonometría (senos y cosenos) para
+                calcular las coordenadas de la junta intermedia y del efector.
               </li>
               <li>
-                <b>Pregunta 2 (selección simple):</b>  
-                Si aumentas las longitudes L1 y L2 (manteniendo la base en el mismo lugar),
-                ¿qué ocurre con el círculo de alcance dibujado en la vista 2D?
-                <br />
-                a) El círculo se hace más grande y el brazo puede llegar más lejos. <br />
-                b) El círculo se hace más pequeño. <br />
-                c) El círculo queda igual.
+                Visualmente, lo ves cuando <b>mueves los deslizadores</b> de q1
+                y q2: el robot se actualiza usando solo FK.
+              </li>
+            </ul>
+
+            <p style={{ marginBottom: 6 }}>
+              <b>3. Cinemática inversa en 2D</b>
+            </p>
+            <p style={{ marginBottom: 8 }}>
+              La <b>cinemática inversa</b> responde:
+              <br />
+              <i>
+                “Dado un objetivo (x, y) en el plano, ¿qué ángulos q1 y q2 debe
+                tomar el robot para llegar a ese punto?”
+              </i>
+            </p>
+            <ul style={{ marginLeft: 16, marginBottom: 8 }}>
+              <li>
+                Al hacer click en el plano o escribir un objetivo en los
+                campos, el programa llama a <code>ik2D</code>, que intenta
+                encontrar q1 y q2 que lleven la punta a ese punto.
+              </li>
+              <li>
+                El algoritmo verifica que el punto esté:
+                <ul style={{ marginLeft: 16 }}>
+                  <li>
+                    Dentro del círculo de alcance (<b>L1 + L2</b>).
+                  </li>
+                  <li>
+                    No demasiado cerca (respetando el mínimo{" "}
+                    <b>|L1 − L2|</b>).
+                  </li>
+                  <li>Por encima del suelo (y ≥ 0).</li>
+                </ul>
+              </li>
+              <li>
+                Si alguna de estas condiciones no se cumple, no hay solución con
+                 cinematica inversa y el programa te avisa.
+              </li>
+            </ul>
+
+            <p style={{ marginBottom: 6 }}>
+              <b>4. Mini actividad para entender cinematica directa y cinematica inversa</b>
+            </p>
+            <ol style={{ marginLeft: 16, marginBottom: 10 }}>
+              <li>
+                Fija unos valores para <b>L1</b> y <b>L2</b> y mueve q1 y q2 con
+                los deslizadores. Observa cómo se traza el brazo: eso es solo{" "}
+                <b>cinemática directa</b>.
+              </li>
+              <li>
+                Mira el círculo de alcance: intenta poner un objetivo dentro del
+                círculo y úsalo con <b>“Ir al objetivo”</b>. Luego intenta
+                un punto fuera del círculo o debajo del suelo y observa que el
+                robot ya no puede encontrar solución.
               </li>
             </ol>
-            <p style={{ marginBottom: 12 }}>
-              Después, prueba en el simulador: cambia L1 y L2 y haz clic en distintos
-              puntos para verificar si tus respuestas coinciden con el comportamiento
-              del robot.
-            </p>
+
             <div style={{ textAlign: "right" }}>
               <button
                 onClick={() => setShowHelp(false)}
